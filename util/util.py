@@ -1,4 +1,4 @@
-.
+
 from __future__ import print_function
 import torch
 import numpy as np
@@ -7,9 +7,13 @@ import inspect, re
 import numpy as np
 import os
 import collections
-
+import torchvision.transforms as transforms
 # Converts a Tensor into a Numpy array
 # |imtype|: the desired type of the converted numpy array
+
+def crop_and_resize(img,bbox,dst_size):
+    crop
+    return cropped_img
 def tensor2im(image_tensor, imtype=np.uint8):
     image_numpy = image_tensor[0].cpu().float().numpy()
     if image_numpy.shape[0] == 1:

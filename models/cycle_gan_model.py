@@ -8,6 +8,8 @@ import util.util as util
 from util.image_pool import ImagePool
 from .base_model import BaseModel
 from . import networks
+from util.roi_pooling import roi_pooling
+from torchvision import transforms
 import sys
 
 
@@ -20,9 +22,13 @@ class CycleGANModel(BaseModel):
 
         nb = opt.batchSize
         size = opt.fineSize
+        self.object_size = (opt.objectSize,opt.objectSize)
+
         self.input_A = self.Tensor(nb, opt.input_nc, size, size)
         self.input_B = self.Tensor(nb, opt.output_nc, size, size)
 
+        self.input_A_bboxes = self.Tensor(nb,1,4)
+        self.input_B_bboxes = self.Tensor(nb,1,4)
         # load/define networks
         # The naming conversion is different from those used in the paper
         # Code (paper): G_A (G), G_B (F), D_A (D_Y), D_B (D_X)
@@ -40,6 +46,14 @@ class CycleGANModel(BaseModel):
             self.netD_B = networks.define_D(opt.input_nc, opt.ndf,
                                             opt.which_model_netD,
                                             opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, self.gpu_ids)
+
+            self.netD_A_object = networks.define_D(opt.output_nc, opt.ndf,
+                                            opt.which_model_netD,
+                                            opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, self.gpu_ids)
+            self.netD_B_object = networks.define_D(opt.input_nc, opt.ndf,
+                                            opt.which_model_netD,
+                                            opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, self.gpu_ids)
+
         if not self.isTrain or opt.continue_train:
             which_epoch = opt.which_epoch
             self.load_network(self.netG_A, 'G_A', which_epoch)
@@ -47,11 +61,17 @@ class CycleGANModel(BaseModel):
             if self.isTrain:
                 self.load_network(self.netD_A, 'D_A', which_epoch)
                 self.load_network(self.netD_B, 'D_B', which_epoch)
+                self.load_network(self.netD_A_object, 'D_A_object', which_epoch)
+                self.load_network(self.netD_B_object, 'D_B_object', which_epoch)
 
         if self.isTrain:
             self.old_lr = opt.lr
             self.fake_A_pool = ImagePool(opt.pool_size)
             self.fake_B_pool = ImagePool(opt.pool_size)
+
+            self.fake_A_object_pool = ImagePool(opt.pool_size)
+            self.fake_B_object_pool = ImagePool(opt.pool_size)
+
             # define loss functions
             self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan, tensor=self.Tensor)
             self.criterionCycle = torch.nn.L1Loss()
@@ -61,11 +81,17 @@ class CycleGANModel(BaseModel):
                                                 lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D_A = torch.optim.Adam(self.netD_A.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D_B = torch.optim.Adam(self.netD_B.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+            self.optimizer_D_A_object = torch.optim.Adam(self.netD_A_object.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+            self.optimizer_D_B_object = torch.optim.Adam(self.netD_B_object.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+
             self.optimizers = []
             self.schedulers = []
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D_A)
             self.optimizers.append(self.optimizer_D_B)
+            self.optimizers.append(self.optimizer_D_A_object)
+            self.optimizers.append(self.optimizer_D_B_object)
+
             for optimizer in self.optimizers:
                 self.schedulers.append(networks.get_scheduler(optimizer, opt))
 
@@ -75,6 +101,8 @@ class CycleGANModel(BaseModel):
         if self.isTrain:
             networks.print_network(self.netD_A)
             networks.print_network(self.netD_B)
+            networks.print_network(self.netD_A_object)
+            networks.print_network(self.netD_B_object)
         print('-----------------------------------------------')
 
     def set_input(self, input):
@@ -83,11 +111,17 @@ class CycleGANModel(BaseModel):
         input_B = input['B' if AtoB else 'A']
         self.input_A.resize_(input_A.size()).copy_(input_A)
         self.input_B.resize_(input_B.size()).copy_(input_B)
+        if self.opt.isTrain:
+            self.input_A_bboxes = input['A_bboxes' if AtoB else 'B_bboxes'].squeeze(1)
+            self.input_B_bboxes = input['B_bboxes' if AtoB else 'A_bboxes'].squeeze(1)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def forward(self):
         self.real_A = Variable(self.input_A)
         self.real_B = Variable(self.input_B)
+
+        self.real_A_bboxes = Variable(self.input_A_bboxes)
+        self.real_B_bboxes = Variable(self.input_B_bboxes)
 
     def test(self):
         real_A = Variable(self.input_A, volatile=True)
@@ -122,10 +156,22 @@ class CycleGANModel(BaseModel):
         loss_D_A = self.backward_D_basic(self.netD_A, self.real_B, fake_B)
         self.loss_D_A = loss_D_A.data[0]
 
+        ## for object
+        fake_B_object = self.fake_B_object_pool.query(self.fake_B_object)
+        real_B_object = roi_pooling(self.real_B,self.real_B_bboxes,size=self.object_size)
+        loss_D_A_object = self.backward_D_basic(self.netD_A_object, real_B_object, fake_B_object)
+        self.loss_D_A_object = loss_D_A_object.data[0]
+
     def backward_D_B(self):
         fake_A = self.fake_A_pool.query(self.fake_A)
         loss_D_B = self.backward_D_basic(self.netD_B, self.real_A, fake_A)
         self.loss_D_B = loss_D_B.data[0]
+
+        ## for object
+        fake_A_object = self.fake_A_object_pool.query(self.fake_A_object)
+        real_A_object = roi_pooling(self.real_A,self.real_A_bboxes,size=self.object_size)
+        loss_D_B_object = self.backward_D_basic(self.netD_B_object, real_A_object, fake_A_object)
+        self.loss_D_B_object = loss_D_B_object.data[0]
 
     def backward_G(self):
         lambda_idt = self.opt.identity
@@ -155,31 +201,61 @@ class CycleGANModel(BaseModel):
         pred_fake = self.netD_A(fake_B)
         loss_G_A = self.criterionGAN(pred_fake, True)
 
+        # GAN loss D_A_object(G_A(A))
+        fake_B_object = roi_pooling(fake_B,self.real_A_bboxes,size=self.object_size)
+        pred_fake_object = self.netD_B_object(fake_B_object)
+        loss_G_A_object = self.criterionGAN(pred_fake_object,True)
+        ###TODO: Debug
+        # test = transforms.ToPILImage()(fake_B_object.cpu().data.squeeze(0))
+        # test.show()
+
         # GAN loss D_B(G_B(B))
         fake_A = self.netG_B(self.real_B)
         pred_fake = self.netD_B(fake_A)
         loss_G_B = self.criterionGAN(pred_fake, True)
 
+        # GAN loss D_A_object(G_A(A))
+        fake_A_object = roi_pooling(fake_A,self.real_B_bboxes,size=self.object_size)
+        pred_fake_object = self.netD_A_object(fake_A_object)
+        loss_G_B_object = self.criterionGAN(pred_fake_object,True)
+
         # Forward cycle loss
         rec_A = self.netG_B(fake_B)
         loss_cycle_A = self.criterionCycle(rec_A, self.real_A) * lambda_A
+        # Forward cycle object loss
+        rec_A_object = roi_pooling(rec_A,self.real_A_bboxes,size=self.object_size)
+        real_A_object = roi_pooling(self.real_A,self.real_A_bboxes,size=self.object_size)
+        loss_cycle_A_object = self.criterionCycle(rec_A_object, real_A_object) * lambda_A
 
         # Backward cycle loss
         rec_B = self.netG_A(fake_A)
         loss_cycle_B = self.criterionCycle(rec_B, self.real_B) * lambda_B
+        # Backward cycle object loss
+        rec_B_object = roi_pooling(rec_B,self.real_B_bboxes,size=self.object_size)
+        real_B_object = roi_pooling(self.real_B,self.real_B_bboxes,size=self.object_size)
+        loss_cycle_B_object = self.criterionCycle(rec_B_object, real_B_object) * lambda_B
+
         # combined loss
-        loss_G = loss_G_A + loss_G_B + loss_cycle_A + loss_cycle_B + loss_idt_A + loss_idt_B
+        loss_G = loss_G_A + loss_G_B + loss_cycle_A + loss_cycle_B + loss_idt_A + loss_idt_B + 0.1*(loss_G_A_object + loss_G_B_object) + 0.5*(loss_cycle_A_object+ loss_cycle_B_object)
         loss_G.backward()
 
         self.fake_B = fake_B.data
         self.fake_A = fake_A.data
         self.rec_A = rec_A.data
         self.rec_B = rec_B.data
+        self.real_A_object = real_A_object.data
+        self.real_B_object = real_B_object.data
+        self.fake_B_object = fake_B_object.data
+        self.fake_A_object = fake_A_object.data
 
         self.loss_G_A = loss_G_A.data[0]
         self.loss_G_B = loss_G_B.data[0]
+        self.loss_G_A_object = loss_G_A_object.data[0]
+        self.loss_G_B_object = loss_G_B_object.data[0]
         self.loss_cycle_A = loss_cycle_A.data[0]
         self.loss_cycle_B = loss_cycle_B.data[0]
+        self.loss_cycle_A_object = loss_cycle_A_object.data[0]
+        self.loss_cycle_B_object = loss_cycle_B_object.data[0]
 
     def optimize_parameters(self):
         # forward
@@ -199,7 +275,9 @@ class CycleGANModel(BaseModel):
 
     def get_current_errors(self):
         ret_errors = OrderedDict([('D_A', self.loss_D_A), ('G_A', self.loss_G_A), ('Cyc_A', self.loss_cycle_A),
-                                 ('D_B', self.loss_D_B), ('G_B', self.loss_G_B), ('Cyc_B',  self.loss_cycle_B)])
+                                 ('D_B', self.loss_D_B), ('G_B', self.loss_G_B), ('Cyc_B',  self.loss_cycle_B),
+                                  ('D_A_object',self.loss_D_A_object),('G_A_object',self.loss_G_A_object),('Cyc_A_object', self.loss_cycle_A_object),
+                                  ('D_B_object',self.loss_D_B_object),('G_B_object',self.loss_G_B_object),('Cyc_B_object',  self.loss_cycle_B_object),])
         if self.opt.identity > 0.0:
             ret_errors['idt_A'] = self.loss_idt_A
             ret_errors['idt_B'] = self.loss_idt_B
@@ -212,11 +290,19 @@ class CycleGANModel(BaseModel):
         real_B = util.tensor2im(self.input_B)
         fake_A = util.tensor2im(self.fake_A)
         rec_B = util.tensor2im(self.rec_B)
+
+
         ret_visuals = OrderedDict([('real_A', real_A), ('fake_B', fake_B), ('rec_A', rec_A),
-                                   ('real_B', real_B), ('fake_A', fake_A), ('rec_B', rec_B)])
+                                   ('real_B', real_B), ('fake_A', fake_A), ('rec_B', rec_B),])
         if self.opt.isTrain and self.opt.identity > 0.0:
             ret_visuals['idt_A'] = util.tensor2im(self.idt_A)
             ret_visuals['idt_B'] = util.tensor2im(self.idt_B)
+        if self.opt.isTrain:
+            ret_visuals['fake_A_object'] = util.tensor2im(self.fake_A_object)
+            ret_visuals['fake_B_object'] = util.tensor2im(self.fake_B_object)
+            ret_visuals['real_B_object'] = util.tensor2im(self.real_B_object)
+            ret_visuals['real_A_object'] = util.tensor2im(self.real_A_object)
+
         return ret_visuals
 
     def save(self, label):
@@ -224,3 +310,6 @@ class CycleGANModel(BaseModel):
         self.save_network(self.netD_A, 'D_A', label, self.gpu_ids)
         self.save_network(self.netG_B, 'G_B', label, self.gpu_ids)
         self.save_network(self.netD_B, 'D_B', label, self.gpu_ids)
+
+        self.save_network(self.netD_B_object, 'D_A_object', label, self.gpu_ids)
+        self.save_network(self.netD_B_object, 'D_B_object', label, self.gpu_ids)

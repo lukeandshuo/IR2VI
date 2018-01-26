@@ -24,9 +24,8 @@ def get_transform(opt):
         transform_list.append(transforms.Scale(osize, Image.BICUBIC))
         transform_list.append(transforms.RandomCrop(opt.fineSize))
     elif opt.resize_or_crop == 'resize_and_crop_bboxes':
-        transform_list.append(RandomSampleCrop())
-        transform_list += [Resize((opt.fineSize,opt.fineSize)),
-                           ToTensor(),
+        transform_list.append(RandomSampleCrop_FixedSize((opt.fineSize,opt.fineSize)))
+        transform_list += [ToTensor(),
                            Normalize((0.5, 0.5, 0.5),
                                             (0.5, 0.5, 0.5))]
         return Compose(transform_list)
@@ -78,26 +77,26 @@ class Compose(object):
 
     def __call__(self, img, boxes=None):
         for t in self.transforms:
-            img = t(img, boxes)
-        return img
+            img, boxes = t(img, boxes)
+        return img,boxes
 
 class ToTensor(object):
     def __init__(self):
         self.to_tensor = transforms.ToTensor()
     def __call__(self, img, boxes=None):
-        return self.to_tensor(img)
+        return self.to_tensor(img),boxes
 
 class Normalize(object):
     def __init__(self, mean, std):
         self.norm = transforms.Normalize(mean,std)
     def __call__(self, tensor,boxes=None):
-        return self.norm(tensor)
+        return self.norm(tensor),boxes
 
 class Resize(object):
     def __init__(self,size):
         self.resize = transforms.Resize(size)
     def __call__(self, img, boxes=None):
-        return self.resize(img)
+        return self.resize(img),boxes
 
 def intersect(box_a, box_b):
     max_xy = np.minimum(box_a[:, 2:], box_b[2:])
@@ -124,6 +123,22 @@ def jaccard_numpy(box_a, box_b):
     union = area_a + area_b - inter
     return inter / union  # [A,B]
 
+def jaccard_boxa_numpy(box_a, box_b):
+    """Compute the jaccard overlap of two sets of boxes.  The jaccard overlap
+    is simply the intersection over union of two boxes.
+    E.g.:
+        A ∩ B / A ∪ B = A ∩ B / (area(A) + area(B) - A ∩ B)
+    Args:
+        box_a: Multiple bounding boxes, Shape: [num_boxes,4]
+        box_b: Single bounding box, Shape: [4]
+    Return:
+        jaccard overlap: Shape: [box_a.shape[0], box_a.shape[1]]
+    """
+    inter = intersect(box_a, box_b)
+    area_a = ((box_a[:, 2]-box_a[:, 0]) *
+              (box_a[:, 3]-box_a[:, 1]))  # [A,B]
+
+    return inter / area_a  # [A,B]
 
 class ObjectCrop(object):
     """Crop
@@ -160,6 +175,95 @@ class ObjectCrop(object):
         pil_image = Image.fromarray(np_image)
 
         return pil_image
+
+
+class RandomSampleCrop_FixedSize(object):
+    """Crop
+    Arguments:
+        img (Image): the image being input during training
+        boxes (Tensor): the original bounding boxes in pt form
+        mode (float tuple): the min and max jaccard overlaps
+    Return:
+        (img, boxes, classes)
+            img (Image): the cropped image
+
+    """
+    def __init__(self,size):
+        self.size = size
+    def __call__(self, image, boxes=None):
+        image = np.array(image)
+        height, width, _ = image.shape
+
+        min_iou, max_iou = (0.9,float('inf'))
+
+        # max trails (50)
+        while True:
+            current_image = image
+
+            w,h = self.size
+
+
+            left = random.uniform(width - w)
+            top = random.uniform(height - h)
+
+            # convert to integer rect x1,y1,x2,y2
+            rect = np.array([int(left), int(top), int(left+w), int(top+h)])
+
+            # calculate IoU (jaccard overlap) b/t the cropped and gt boxes
+            # cv2.rectangle(image,(int(boxes[0,0]),int(boxes[0,1])),(int(boxes[0,2]),int(boxes[0,3])),color=(0,255,255))
+            # cv2.imshow(",,",image)
+            # cv2.waitKey(0)
+            overlap = jaccard_boxa_numpy(boxes, rect)
+            # is min and max overlap constraint satisfied? if not try again
+            # if overlap.min() < min_iou and max_iou < overlap.max():
+            #     continue
+            if overlap.min() < min_iou:
+                continue
+            # cut the crop from the image
+            current_image = current_image[rect[1]:rect[3], rect[0]:rect[2],
+                                          :]
+
+
+            # keep overlap with gt box IF center in sampled patch
+            centers = (boxes[:, :2] + boxes[:, 2:]) / 2.0
+
+            # mask in all gt boxes that above and to the left of centers
+            m1 = (rect[0] < centers[:, 0]) * (rect[1] < centers[:, 1])
+
+            # mask in all gt boxes that under and to the right of centers
+            m2 = (rect[2] > centers[:, 0]) * (rect[3] > centers[:, 1])
+
+            # mask in that both m1 and m2 are true
+            mask = m1 * m2
+
+            # have any valid boxes? try again if not
+            if not mask.any():
+                continue
+
+            # take only matching gt boxes
+            current_boxes = boxes[mask, :].copy()
+
+
+            # should we use the box left and top corner or the crop's
+            current_boxes[:, :2] = np.maximum(current_boxes[:, :2],
+                                              rect[:2])
+            # adjust to crop (by substracting crop's left,top)
+            current_boxes[:, :2] -= rect[:2]
+
+            current_boxes[:, 2:] = np.minimum(current_boxes[:, 2:],
+                                              rect[2:])
+            # adjust to crop (by substracting crop's left,top)
+            current_boxes[:, 2:] -= rect[:2]
+
+            # cv2.rectangle(current_image,(int(current_boxes[0,0]),int(current_boxes[0,1])),(int(current_boxes[0,2]),int(current_boxes[0,3])),(0,255,0))
+            # cv2.imshow("test",current_image)
+            # cv2.waitKey(10)
+            current_image = Image.fromarray(current_image)
+            # print(mode)
+            # print(overlap.min())
+            return current_image,current_boxes
+
+
 
 class RandomSampleCrop(object):
     """Crop

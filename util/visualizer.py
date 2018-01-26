@@ -142,3 +142,15 @@ class Visualizer():
             txts.append(label)
             links.append(image_name)
         webpage.add_images(ims, txts, links, width=self.win_size)
+
+    def save_fakeB_images(self, save_dir, visuals, image_path):
+
+        img_name = ntpath.basename(image_path[0])
+        save_path = os.path.join(save_dir,img_name)
+        if os.path.exists(save_path):
+            return
+        for label, image_numpy in visuals.items():
+            if label=="fake_B":
+                 util.save_image(image_numpy, save_path)
+
+
