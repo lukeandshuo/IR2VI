@@ -46,7 +46,7 @@ class CycleGANModel(BaseModel):
             self.netD_B = networks.define_D(opt.input_nc, opt.ndf,
                                             opt.which_model_netD,
                                             opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, self.gpu_ids)
-
+            ###TODO change opt.which_model_netD  for define customized Discriminators
             self.netD_A_object = networks.define_D(opt.output_nc, opt.ndf,
                                             opt.which_model_netD,
                                             opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, self.gpu_ids)
@@ -236,7 +236,7 @@ class CycleGANModel(BaseModel):
         loss_cycle_B_object = self.criterionCycle(rec_B_object, real_B_object) * lambda_B
 
         # combined loss
-        loss_G = loss_G_A + loss_G_B + loss_cycle_A + loss_cycle_B + loss_idt_A + loss_idt_B + 0.1*(loss_G_A_object + loss_G_B_object) + 0.5*(loss_cycle_A_object+ loss_cycle_B_object)
+        loss_G = loss_G_A + loss_G_B + loss_cycle_A + loss_cycle_B + loss_idt_A + loss_idt_B + 0*(loss_G_A_object + loss_G_B_object) + 0*(loss_cycle_A_object+ loss_cycle_B_object)
         loss_G.backward()
 
         self.fake_B = fake_B.data

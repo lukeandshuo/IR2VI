@@ -24,8 +24,9 @@ def get_transform(opt):
         transform_list.append(transforms.Scale(osize, Image.BICUBIC))
         transform_list.append(transforms.RandomCrop(opt.fineSize))
     elif opt.resize_or_crop == 'resize_and_crop_bboxes':
-        transform_list.append(RandomSampleCrop_FixedSize((opt.fineSize,opt.fineSize)))
-        transform_list += [ToTensor(),
+        transform_list.append(Resize((opt.loadSize,opt.loadSize)))
+        transform_list += [RandomSampleCrop_FixedSize((opt.fineSize,opt.fineSize)),
+                           ToTensor(),
                            Normalize((0.5, 0.5, 0.5),
                                             (0.5, 0.5, 0.5))]
         return Compose(transform_list)
@@ -95,8 +96,31 @@ class Normalize(object):
 class Resize(object):
     def __init__(self,size):
         self.resize = transforms.Resize(size)
+        self.size = size
     def __call__(self, img, boxes=None):
-        return self.resize(img),boxes
+
+        ## resize the bboxes
+        np_image = np.array(img)
+        img_h, img_w, _ = np_image.shape
+        scale_h = self.size[1]/float(img_h)
+        scale_w = self.size[0]/float(img_w)
+
+        old_bbox_h = boxes[:,3]-boxes[:,1]
+        old_bbox_w = boxes[:,2]-boxes[:,0]
+
+        new_bbox_h = old_bbox_h*scale_h
+        new_bbox_w = old_bbox_w*scale_w
+
+        new_boxes = boxes.copy()
+        new_boxes[:,0] = boxes[:,0]*scale_w
+        new_boxes[:,1] = boxes[:,1]*scale_h
+        new_boxes[:,2] = new_boxes[:,0] + new_bbox_w
+        new_boxes[:,3] = new_boxes[:,1] + new_bbox_h
+
+        ## resize the image
+        new_img = self.resize(img)
+
+        return new_img ,new_boxes
 
 def intersect(box_a, box_b):
     max_xy = np.minimum(box_a[:, 2:], box_b[2:])

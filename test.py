@@ -22,18 +22,18 @@ web_dir = os.path.join(opt.results_dir, opt.name, '%s_%s' % (opt.phase, opt.whic
 webpage = html.HTML(web_dir, 'Experiment = %s, Phase = %s, Epoch = %s' % (opt.name, opt.phase, opt.which_epoch))
 # test
 for i, data in enumerate(dataset):
-    # if i >= opt.how_many:
-    #     break
+    if i >= opt.how_many:
+        break
     model.set_input(data)
     img_path = model.get_image_paths()
-    save_dir = "/data/Sensiac/SensiacNight/Imagery/FocalGAN_v1/images/"
+    save_dir = "/data/Sensiac/SensiacNight/Imagery/background_with_object_v2(Unet256)/images/"
     model.test()
     visuals = model.get_current_visuals()
 
     print('%04d: process image... %s' % (i, img_path))
-    # visualizer.save_images(webpage, visuals, img_path)
+    visualizer.save_images(webpage, visuals, img_path)
 
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-    visualizer.save_fakeB_images(save_dir, visuals, img_path)
+    # if not os.path.exists(save_dir):
+    #     os.makedirs(save_dir)
+    # visualizer.save_fakeB_images(save_dir, visuals, img_path)
 webpage.save()
