@@ -95,7 +95,7 @@ class Normalize(object):
 
 class Resize(object):
     def __init__(self,size):
-        self.resize = transforms.Resize(size)
+        self.resize = transforms.Scale(size, Image.BICUBIC)
         self.size = size
     def __call__(self, img, boxes=None):
 

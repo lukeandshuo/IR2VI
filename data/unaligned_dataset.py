@@ -16,7 +16,7 @@ class UnalignedDataset(BaseDataset):
 
 
         ####TODO: note this is for sensiac night object detection
-        if opt.phase == 'test':
+        if opt.phase == 'translate':
             name_list_dir = "/data/Sensiac/SensiacNight/Train_Test/IR/test.txt"
             name_list = []
             with open(name_list_dir,'r') as f:

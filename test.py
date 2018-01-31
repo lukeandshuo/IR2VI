@@ -26,7 +26,7 @@ for i, data in enumerate(dataset):
         break
     model.set_input(data)
     img_path = model.get_image_paths()
-    save_dir = "/data/Sensiac/SensiacNight/Imagery/background_with_object_v2(Unet256)/images/"
+    save_dir = "/data/Sensiac/SensiacNight/Imagery/background_with_object_v3(resnet_9blocks)/images/"
     model.test()
     visuals = model.get_current_visuals()
 

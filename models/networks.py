@@ -5,6 +5,7 @@ import functools
 from torch.autograd import Variable
 from torch.optim import lr_scheduler
 import numpy as np
+import matplotlib.pyplot as plt
 ###############################################################################
 # Functions
 ###############################################################################
@@ -220,6 +221,12 @@ class ResnetGenerator(nn.Module):
         else:
             use_bias = norm_layer == nn.InstanceNorm2d
 
+        skip_connection = [nn.ReflectionPad2d(3),
+                          nn.Conv2d(input_nc, output_nc, kernel_size=7, padding=0, bias=use_bias),
+                          norm_layer(output_nc)]
+
+        self.skip_connection = nn.Sequential(*skip_connection)
+
         model = [nn.ReflectionPad2d(3),
                  nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0,
                            bias=use_bias),
@@ -248,15 +255,26 @@ class ResnetGenerator(nn.Module):
                       nn.ReLU(True)]
         model += [nn.ReflectionPad2d(3)]
         model += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
-        model += [nn.Tanh()]
+        ###TODO move tanh to outside
+        # model += [nn.Tanh()]
 
         self.model = nn.Sequential(*model)
-
+        self.tanh_modul = nn.Sequential(nn.Tanh())
     def forward(self, input):
         if self.gpu_ids and isinstance(input.data, torch.cuda.FloatTensor):
-            return nn.parallel.data_parallel(self.model, input, self.gpu_ids)
+            texture =  nn.parallel.data_parallel(self.model, input, self.gpu_ids)
         else:
-            return self.model(input)
+            texture= self.model(input)
+
+        texture_img = texture.cpu().data.numpy()[0,0,:,:]
+       # plt.imshow(texture_img)
+
+        high_freq = self.skip_connection(input)
+        hf_img  = high_freq.cpu().data.numpy()[0,0,:,:]
+     #   plt.imshow(hf_img)
+      #  plt.show()
+        output = high_freq+texture
+        return self.tanh_modul(output)
 
 
 # Define a resnet block

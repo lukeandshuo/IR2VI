@@ -147,8 +147,6 @@ class CycleGANModel(BaseModel):
         loss_D_fake = self.criterionGAN(pred_fake, False)
         # Combined loss
         loss_D = (loss_D_real + loss_D_fake) * 0.5
-        # backward
-        loss_D.backward()
         return loss_D
 
     def backward_D_A(self):
@@ -162,6 +160,11 @@ class CycleGANModel(BaseModel):
         loss_D_A_object = self.backward_D_basic(self.netD_A_object, real_B_object, fake_B_object)
         self.loss_D_A_object = loss_D_A_object.data[0]
 
+        # Combine loss
+        loss_D_A_total = (5*loss_D_A + loss_D_A_object)
+        # backward
+        loss_D_A_total.backward()
+
     def backward_D_B(self):
         fake_A = self.fake_A_pool.query(self.fake_A)
         loss_D_B = self.backward_D_basic(self.netD_B, self.real_A, fake_A)
@@ -172,6 +175,11 @@ class CycleGANModel(BaseModel):
         real_A_object = roi_pooling(self.real_A,self.real_A_bboxes,size=self.object_size)
         loss_D_B_object = self.backward_D_basic(self.netD_B_object, real_A_object, fake_A_object)
         self.loss_D_B_object = loss_D_B_object.data[0]
+
+        # Combine loss
+        loss_D_B_total = (5 * loss_D_B + loss_D_B_object)
+        # backward
+        loss_D_B_total.backward()
 
     def backward_G(self):
         lambda_idt = self.opt.identity
@@ -236,7 +244,7 @@ class CycleGANModel(BaseModel):
         loss_cycle_B_object = self.criterionCycle(rec_B_object, real_B_object) * lambda_B
 
         # combined loss
-        loss_G = loss_G_A + loss_G_B + loss_cycle_A + loss_cycle_B + loss_idt_A + loss_idt_B + 0*(loss_G_A_object + loss_G_B_object) + 0*(loss_cycle_A_object+ loss_cycle_B_object)
+        loss_G = loss_G_A + loss_G_B + loss_cycle_A + loss_cycle_B + loss_idt_A + loss_idt_B + 0.1*(loss_G_A_object + loss_G_B_object) + 0.1*(loss_cycle_A_object+ loss_cycle_B_object)
         loss_G.backward()
 
         self.fake_B = fake_B.data
