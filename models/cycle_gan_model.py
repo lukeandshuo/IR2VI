@@ -161,7 +161,7 @@ class CycleGANModel(BaseModel):
         self.loss_D_A_object = loss_D_A_object.data[0]
 
         # Combine loss
-        loss_D_A_total = (5*loss_D_A + loss_D_A_object)
+        loss_D_A_total = (loss_D_A + 0.1*loss_D_A_object)
         # backward
         loss_D_A_total.backward()
 
@@ -177,7 +177,7 @@ class CycleGANModel(BaseModel):
         self.loss_D_B_object = loss_D_B_object.data[0]
 
         # Combine loss
-        loss_D_B_total = (5 * loss_D_B + loss_D_B_object)
+        loss_D_B_total = (loss_D_B + 0.1*loss_D_B_object)
         # backward
         loss_D_B_total.backward()
 
@@ -244,7 +244,7 @@ class CycleGANModel(BaseModel):
         loss_cycle_B_object = self.criterionCycle(rec_B_object, real_B_object) * lambda_B
 
         # combined loss
-        loss_G = loss_G_A + loss_G_B + loss_cycle_A + loss_cycle_B + loss_idt_A + loss_idt_B + 0.1*(loss_G_A_object + loss_G_B_object) + 0.1*(loss_cycle_A_object+ loss_cycle_B_object)
+        loss_G = loss_G_A + loss_G_B + loss_cycle_A + loss_cycle_B + loss_idt_A + loss_idt_B + 0.1*(loss_G_A_object + loss_G_B_object) + loss_cycle_A_object+ loss_cycle_B_object
         loss_G.backward()
 
         self.fake_B = fake_B.data

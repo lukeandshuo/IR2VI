@@ -11,7 +11,7 @@ class BaseOptions():
 
     def initialize(self):
         self.parser.add_argument('--dataroot', default='./datasets/Sensiac_equ', help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
-        self.parser.add_argument('--batchSize', type=int, default=2, help='input batch size')
+        self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
         self.parser.add_argument('--loadSize', type=int, default=480, help='scale images to this size')
         self.parser.add_argument('--fineSize', type=int, default=256, help='then crop to this size')
         self.parser.add_argument('--objectSize', type=int, default=64, help='the object size for Discriminator')
@@ -22,8 +22,8 @@ class BaseOptions():
         self.parser.add_argument('--which_model_netD', type=str, default='n_layers', help='selects model to use for netD')
         self.parser.add_argument('--which_model_netG', type=str, default='resnet_9blocks', help='selects model to use for netG')
         self.parser.add_argument('--n_layers_D', type=int, default=4, help='only used if which_model_netD==n_layers')
-        self.parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
-        self.parser.add_argument('--name', type=str, default='background_with_object_v5(high_freq_feature)', help='name of the experiment. It decides where to store samples and models')
+        self.parser.add_argument('--gpu_ids', type=str, default='0,1', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+        self.parser.add_argument('--name', type=str, default='background_with_object_v5(balance_loss_weights)', help='name of the experiment. It decides where to store samples and models')
         self.parser.add_argument('--dataset_mode', type=str, default='unaligned', help='chooses how datasets are loaded. [unaligned | aligned | single]')
         self.parser.add_argument('--model', type=str, default='cycle_gan',
                                  help='chooses which model to use. cycle_gan, pix2pix, test')
@@ -43,6 +43,7 @@ class BaseOptions():
 
         self.initialized = True
 
+    # 'background_with_object_v6(balance_loss_weights)'
     def parse(self):
         if not self.initialized:
             self.initialize()

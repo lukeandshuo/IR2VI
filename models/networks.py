@@ -4,8 +4,10 @@ from torch.nn import init
 import functools
 from torch.autograd import Variable
 from torch.optim import lr_scheduler
+import util.util as util
 import numpy as np
 import matplotlib.pyplot as plt
+import cv2
 ###############################################################################
 # Functions
 ###############################################################################
@@ -266,15 +268,20 @@ class ResnetGenerator(nn.Module):
         else:
             texture= self.model(input)
 
-        texture_img = texture.cpu().data.numpy()[0,0,:,:]
+        # texture_img = util.tensor2im(texture.data)
+        # cv2.imshow('texture',texture_img)
+
        # plt.imshow(texture_img)
 
-        high_freq = self.skip_connection(input)
-        hf_img  = high_freq.cpu().data.numpy()[0,0,:,:]
-     #   plt.imshow(hf_img)
-      #  plt.show()
-        output = high_freq+texture
-        return self.tanh_modul(output)
+        contour = self.skip_connection(input)
+        # high_freq_img = util.tensor2im(high_freq.data)
+        # cv2.imshow('high_freq',high_freq_img)
+
+        fusion = self.tanh_modul(contour+texture)
+        # output_img = util.tensor2im(output.data)
+        # cv2.imshow('output',output_img)
+        # cv2.waitKey(3000)
+        return fusion
 
 
 # Define a resnet block
